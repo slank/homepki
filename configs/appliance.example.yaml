@@ -1,0 +1,40 @@
+environment: appliance
+
+server:
+  # Keep this on 127.0.0.1 when using an HTTPS reverse proxy on the Pi.
+  # Change it to 0.0.0.0 only if you understand the local-network exposure.
+  host: 127.0.0.1
+  port: 8080
+
+security:
+  require_yubikey: true
+  allow_insecure_local_session_cookie: false
+
+storage:
+  sqlite_path: /var/lib/homepki/homepki.db
+
+pki:
+  provider: step
+  step_binary: __STEP_BINARY__
+  ca_url: https://homepki.local:8443
+  root_certificate_path: /var/lib/homepki/.step/certs/root_ca.crt
+  provisioner: homepki
+  provisioner_password_file: /etc/homepki/provisioner-password
+  step_path: /var/lib/homepki/.step
+  ca_name: HomePKI Root CA
+  ca_dns_name: homepki.local
+  ca_address: :8443
+  step_ca_binary: __STEP_CA_BINARY__
+  systemctl_binary: __SUDO_BINARY__
+  systemctl_args:
+    - __SYSTEMCTL_BINARY__
+  ca_service_name: homepki-step-ca.service
+  yubikey_pin_file: /var/lib/homepki/yubikey-pin
+  yubikey_root_slot: "82"
+  yubikey_intermediate_slot: "83"
+
+yubikey:
+  ykman_binary: __YKMAN_BINARY__
+  pkcs11_tool_binary: __PKCS11_TOOL_BINARY__
+  pkcs11_library_path: __PKCS11_LIBRARY__
+  signing_slot: "83"

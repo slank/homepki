@@ -1,0 +1,21 @@
+environment: development
+
+server:
+  host: 127.0.0.1
+  port: 8080
+
+security:
+  require_yubikey: false
+  allow_insecure_local_session_cookie: true
+
+storage:
+  sqlite_path: ./homepki-dev.db
+
+pki:
+  provider: mock
+
+yubikey:
+  ykman_binary: ykman
+  pkcs11_tool_binary: pkcs11-tool
+  pkcs11_library_path: ""
+  signing_slot: "83"

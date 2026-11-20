@@ -1,0 +1,4 @@
+.DS_Store
+dist/
+internal/pki/certificate.pem
+internal/pki/private-key.pem
