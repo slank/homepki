@@ -60,7 +60,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             binfmt-support \
             debian-archive-keyring \
-            qemu-user-static \
+            qemu-user-binfmt \
             xz-utils
           sudo .build/rpi-image-gen/install_deps.sh
           ./scripts/build-raspberry-pi-image.sh
