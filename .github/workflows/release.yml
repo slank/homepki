@@ -80,7 +80,7 @@ jobs:
         with:
           artifact-name: sbom.spdx.json
           format: spdx-json
-          path: ./dist/homepki-linux-arm64
+          path: ./dist/installer-linux-arm64
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
