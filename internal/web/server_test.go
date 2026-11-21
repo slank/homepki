@@ -3,7 +3,13 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -50,6 +56,10 @@ func TestBrowserSetupWizardProvisionsCA(t *testing.T) {
 	if homeRecorder.Code != http.StatusOK || !bytes.Contains(homeRecorder.Body.Bytes(), []byte("Set up HomePKI")) {
 		t.Fatalf("expected setup page, status=%d body=%s", homeRecorder.Code, homeRecorder.Body.String())
 	}
+	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("at least 12 characters")) ||
+		!bytes.Contains(homeRecorder.Body.Bytes(), []byte(">Show<")) {
+		t.Fatalf("expected setup password guidance and toggle, body=%s", homeRecorder.Body.String())
+	}
 
 	setupForm := url.Values{
 		"username": []string{"admin"},
@@ -89,6 +99,22 @@ func TestBrowserSetupWizardProvisionsCA(t *testing.T) {
 	handler.ServeHTTP(provisionRecorder, provisionRequest)
 	if provisionRecorder.Code != http.StatusSeeOther {
 		t.Fatalf("expected provision redirect, status=%d body=%s", provisionRecorder.Code, provisionRecorder.Body.String())
+	}
+
+	dashboardRequest := httptest.NewRequest(http.MethodGet, "/", nil)
+	dashboardRequest.Header.Set("Accept", "text/html")
+	dashboardRequest.AddCookie(sessionCookie)
+	dashboardRequest.AddCookie(csrfCookie)
+	dashboardRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(dashboardRecorder, dashboardRequest)
+	if dashboardRecorder.Code != http.StatusOK {
+		t.Fatalf("expected dashboard page, status=%d body=%s", dashboardRecorder.Code, dashboardRecorder.Body.String())
+	}
+	dashboardBody := dashboardRecorder.Body.Bytes()
+	if !bytes.Contains(dashboardBody, []byte("3 months (recommended)")) ||
+		!bytes.Contains(dashboardBody, []byte("value=\"2160\" selected")) ||
+		!bytes.Contains(dashboardBody, []byte("You must verify you control each name before issuing")) {
+		t.Fatalf("expected certificate lifetime options and ownership guidance, body=%s", dashboardRecorder.Body.String())
 	}
 
 	issueForm := url.Values{
@@ -291,6 +317,45 @@ func TestBackupAndFactoryResetFlows(t *testing.T) {
 	}
 }
 
+func TestTrustGuidanceIncludesCertificateDownloadsAndFingerprints(t *testing.T) {
+	t.Parallel()
+
+	handler, _, _, teardown := newTestServer(t, false)
+	defer teardown()
+	_, sessionCookie := setupAdminSession(t, handler, "admin", "secret-password")
+
+	trustRequest := httptest.NewRequest(http.MethodGet, "/trust-guidance", nil)
+	trustRequest.Header.Set("Accept", "text/html")
+	trustRequest.AddCookie(sessionCookie)
+	trustRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(trustRecorder, trustRequest)
+	if trustRecorder.Code != http.StatusOK {
+		t.Fatalf("trust guidance status=%d body=%s", trustRecorder.Code, trustRecorder.Body.String())
+	}
+	trustBody := trustRecorder.Body.Bytes()
+	if !bytes.Contains(trustBody, []byte("/trust/root-ca.crt")) ||
+		!bytes.Contains(trustBody, []byte("/trust/intermediate-ca.crt")) ||
+		!bytes.Contains(trustBody, []byte("openssl x509 -in root_ca.crt -noout -fingerprint -sha256")) {
+		t.Fatalf("expected certificate download and verification instructions, body=%s", trustRecorder.Body.String())
+	}
+
+	rootRequest := httptest.NewRequest(http.MethodGet, "/trust/root-ca.crt", nil)
+	rootRequest.AddCookie(sessionCookie)
+	rootRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(rootRecorder, rootRequest)
+	if rootRecorder.Code != http.StatusOK || !bytes.Contains(rootRecorder.Body.Bytes(), []byte("BEGIN CERTIFICATE")) {
+		t.Fatalf("root certificate download status=%d body=%s", rootRecorder.Code, rootRecorder.Body.String())
+	}
+
+	intermediateRequest := httptest.NewRequest(http.MethodGet, "/trust/intermediate-ca.crt", nil)
+	intermediateRequest.AddCookie(sessionCookie)
+	intermediateRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(intermediateRecorder, intermediateRequest)
+	if intermediateRecorder.Code != http.StatusOK || !bytes.Contains(intermediateRecorder.Body.Bytes(), []byte("BEGIN CERTIFICATE")) {
+		t.Fatalf("intermediate certificate download status=%d body=%s", intermediateRecorder.Code, intermediateRecorder.Body.String())
+	}
+}
+
 func newTestServer(t *testing.T, includeBackupPaths bool) (http.Handler, string, string, func()) {
 	return newTestServerWithConfig(t, includeBackupPaths, nil)
 }
@@ -326,6 +391,7 @@ func newTestServerWithConfig(t *testing.T, includeBackupPaths bool, service pki.
 		PKI:                  service,
 		SessionTTL:           4 * time.Hour,
 		AllowInsecureCookies: true,
+		ProtectedPaths:       buildProtectedCertificatePaths(t, tempDir),
 	}
 	if includeBackupPaths {
 		server.SQLitePath = dbPath
@@ -335,6 +401,52 @@ func newTestServerWithConfig(t *testing.T, includeBackupPaths bool, service pki.
 
 	handler := NewServer(server)
 	return handler, dbPath, tempDir, func() { _ = db.Close() }
+}
+
+func buildProtectedCertificatePaths(t *testing.T, tempDir string) []string {
+	t.Helper()
+
+	stepPath := filepath.Join(tempDir, ".step")
+	certsPath := filepath.Join(stepPath, "certs")
+	if err := os.MkdirAll(certsPath, 0o700); err != nil {
+		t.Fatalf("create certs path: %v", err)
+	}
+	rootPath := filepath.Join(certsPath, "root_ca.crt")
+	intermediatePath := filepath.Join(certsPath, "intermediate_ca.crt")
+	writeTestCertificatePEM(t, rootPath, "HomePKI Test Root")
+	writeTestCertificatePEM(t, intermediatePath, "HomePKI Test Intermediate")
+	return []string{stepPath, rootPath}
+}
+
+func writeTestCertificatePEM(t *testing.T, path, commonName string) {
+	t.Helper()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate test key: %v", err)
+	}
+
+	now := time.Now().UTC()
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			CommonName: commonName,
+		},
+		NotBefore:             now.Add(-time.Minute),
+		NotAfter:              now.Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		t.Fatalf("create test certificate: %v", err)
+	}
+	content := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write test certificate: %v", err)
+	}
 }
 
 func setupAdminSession(t *testing.T, handler http.Handler, username, password string) (string, *http.Cookie) {

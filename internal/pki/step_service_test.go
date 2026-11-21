@@ -111,10 +111,12 @@ func TestStepCAServiceProvisionsYubiKeyPKI(t *testing.T) {
 	rootPath := filepath.Join(stepPath, "certs", "root_ca.crt")
 	certificateFixture := filepath.Join(tempDir, "certificate.pem")
 	pinFile := filepath.Join(tempDir, "yubikey-pin")
+	argumentsPath := filepath.Join(tempDir, "step-arguments.txt")
 	writeTestCertificate(t, certificateFixture)
 
 	stepBinary := filepath.Join(tempDir, "step")
 	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$@" >> %q
 if [ "$1" = "ca" ] && [ "$2" = "init" ]; then
   mkdir -p %q/config %q/certs
   printf '{}\n' > %q/config/ca.json
@@ -125,7 +127,7 @@ if [ "$1" = "certificate" ]; then
   cp %q "$output"
 fi
 exit 0
-`, stepPath, stepPath, stepPath, certificateFixture)
+`, argumentsPath, stepPath, stepPath, stepPath, certificateFixture)
 	if err := os.WriteFile(stepBinary, []byte(script), 0o700); err != nil {
 		t.Fatalf("write fake step: %v", err)
 	}
@@ -171,6 +173,13 @@ exit 0
 	}
 	if !strings.Contains(configText, `"type": "yubikey"`) {
 		t.Fatalf("expected yubikey kms config, got %s", configText)
+	}
+	arguments, err := os.ReadFile(argumentsPath)
+	if err != nil {
+		t.Fatalf("read step arguments: %v", err)
+	}
+	if !strings.Contains(string(arguments), "provisioner\nupdate\nhomepki") {
+		t.Fatalf("expected provisioner duration update call, got %s", string(arguments))
 	}
 }
 
@@ -221,6 +230,23 @@ exit 2
 	}
 	if strings.Contains(string(arguments), "--provisioner") {
 		t.Fatalf("revoke command must not receive provisioner flags, got %s", string(arguments))
+	}
+}
+
+func TestStepCADNSEntries(t *testing.T) {
+	t.Parallel()
+
+	entries := stepCADNSEntries("https://127.0.0.1:9443", "homepki.local")
+	if len(entries) != 2 {
+		t.Fatalf("expected two dns entries, got %v", entries)
+	}
+	if entries[0] != "homepki.local" || entries[1] != "127.0.0.1" {
+		t.Fatalf("unexpected dns entries: %v", entries)
+	}
+
+	entries = stepCADNSEntries("https://homepki.local:8443", "homepki.local")
+	if len(entries) != 1 || entries[0] != "homepki.local" {
+		t.Fatalf("expected de-duplicated dns entries, got %v", entries)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -112,8 +113,8 @@ func (s StepCAService) ProvisionCA(ctx context.Context, params ProvisionCAParams
 		"--provisioner", s.Config.Provisioner,
 		"--deployment-type", "standalone",
 	}
-	if s.Config.CADNSName != "" {
-		args = append(args, "--dns", s.Config.CADNSName)
+	for _, dnsName := range stepCADNSEntries(s.Config.CAURL, s.Config.CADNSName) {
+		args = append(args, "--dns", dnsName)
 	}
 	if s.Config.CAAddress != "" {
 		args = append(args, "--address", s.Config.CAAddress)
@@ -141,6 +142,9 @@ func (s StepCAService) ProvisionCA(ctx context.Context, params ProvisionCAParams
 		if err := s.configureYubiKeyCA(ctx, params, stepBinary, stepPath, rootPath); err != nil {
 			return ProvisionCAResult{}, err
 		}
+	}
+	if err := s.configureProvisionerDurations(ctx, stepBinary, stepPath); err != nil {
+		return ProvisionCAResult{}, err
 	}
 
 	contents, err := os.ReadFile(rootPath)
@@ -271,6 +275,27 @@ func (s StepCAService) configureYubiKeyCA(
 		}
 	}
 
+	return nil
+}
+
+func (s StepCAService) configureProvisionerDurations(ctx context.Context, stepBinary, stepPath string) error {
+	if strings.TrimSpace(s.Config.Provisioner) == "" {
+		return errors.New("provisioner is required to configure certificate duration policy")
+	}
+	configPath := filepath.Join(stepPath, "config", "ca.json")
+	args := []string{
+		"ca", "provisioner", "update", s.Config.Provisioner,
+		"--ca-config", configPath,
+		"--x509-min-dur", "5m",
+		"--x509-default-dur", "2160h",
+		"--x509-max-dur", "17520h",
+	}
+	cmd := exec.CommandContext(ctx, stepBinary, args...)
+	cmd.Env = stepCommandEnvironment(stepBinary, stepPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("configure provisioner duration policy: %w: %s", err, strings.TrimSpace(string(output)))
+	}
 	return nil
 }
 
@@ -533,8 +558,8 @@ func ValidateCertificateRequest(req IssueCertificateRequest) error {
 	if req.TTL <= 0 {
 		return errors.New("certificate lifetime must be greater than zero")
 	}
-	if req.TTL > 397*24*time.Hour {
-		return errors.New("certificate lifetime cannot exceed 397 days")
+	if req.TTL > 730*24*time.Hour {
+		return errors.New("certificate lifetime cannot exceed 2 years")
 	}
 	for _, name := range append([]string{req.CommonName}, req.DNSNames...) {
 		if strings.TrimSpace(name) == "" || !validDNSName(name) {
@@ -589,4 +614,26 @@ func parseCertificatePEM(contents []byte) (*x509.Certificate, error) {
 		return nil, fmt.Errorf("parse certificate: %w", err)
 	}
 	return certificate, nil
+}
+
+func stepCADNSEntries(caURL, configuredName string) []string {
+	seen := map[string]struct{}{}
+	dnsEntries := make([]string, 0, 2)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, exists := seen[value]; exists {
+			return
+		}
+		seen[value] = struct{}{}
+		dnsEntries = append(dnsEntries, value)
+	}
+
+	add(configuredName)
+	if parsed, err := url.Parse(strings.TrimSpace(caURL)); err == nil {
+		add(parsed.Hostname())
+	}
+	return dnsEntries
 }

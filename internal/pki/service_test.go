@@ -26,7 +26,7 @@ func TestValidateCertificateRequest(t *testing.T) {
 	}
 
 	invalidTTL := valid
-	invalidTTL.TTL = 398 * 24 * time.Hour
+	invalidTTL.TTL = 731 * 24 * time.Hour
 	if err := ValidateCertificateRequest(invalidTTL); err == nil {
 		t.Fatalf("expected excessive lifetime to be rejected")
 	}
