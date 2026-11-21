@@ -7,8 +7,11 @@ Raspberry Pi Zero 2 W is the reference appliance target. Repeat the same checkli
 - [ ] `make cross-build` completes for `linux/arm64`
 - [ ] `make cross-build-amd64` completes for `linux/amd64`
 - [ ] `homepki -check-yubikey` reports `piv=enabled`
+- [ ] `make source-package` produces a versioned source archive
 - [ ] `make appliance-package` produces release tarball
 - [ ] `make appliance-installer-package` produces installer tarball
+- [ ] `scripts/build-raspberry-pi-image.sh` produces a compressed Zero 2 W image
+- [ ] Release checksums cover every published artifact
 
 ## Boot and service
 

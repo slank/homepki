@@ -1,0 +1,55 @@
+# METABEGIN
+# X-Env-Layer-Name: homepki-appliance
+# X-Env-Layer-Category: application
+# X-Env-Layer-Desc: Bundle the HomePKI installer in a Raspberry Pi image
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: bookworm-minbase,openssh-server
+#
+# X-Env-VarPrefix: homepki
+#
+# X-Env-Var-installer:
+# X-Env-Var-installer-Desc: Path to the HomePKI ARM64 installer archive
+# X-Env-Var-installer-Required: y
+# X-Env-Var-installer-Valid: file
+# X-Env-Var-installer-Set: y
+#
+# METAEND
+---
+mmdebstrap:
+  packages:
+    - avahi-daemon
+    - ca-certificates
+    - opensc
+    - pcscd
+    - sudo
+    - ykcs11
+    - yubikey-manager
+  customize-hooks:
+    - install -d -m 0755 "$1/opt/homepki/release"
+    - cp "$IGconf_homepki_installer" "$1/opt/homepki/release/homepki-installer.tar.gz"
+    - tar -xzf "$IGconf_homepki_installer" -C "$1/opt/homepki/release"
+    - ln -sf /opt/homepki/release/install.sh "$1/usr/local/sbin/install-homepki"
+    - |-
+      cat > "$1/etc/motd" <<- 'EOF'
+      HomePKI appliance image
+
+      Complete the Step CLI/CA and YubiKey prerequisites, then run:
+        sudo install-homepki
+
+      The HomePKI installer is bundled in /opt/homepki/release.
+      See /opt/homepki/release/README.md for release-specific notes.
+      EOF
+    - |-
+      cat > "$1/opt/homepki/release/README.md" <<- 'EOF'
+      HomePKI Raspberry Pi image
+
+      This image contains the matching Linux arm64 HomePKI installer bundle.
+      No administrator credentials, CA keys, YubiKey PINs, or network secrets
+      are embedded in the image.
+
+      Configure SSH access and networking with your imaging tool before first
+      boot, or attach a console. Install the Step CLI, Step CA, Step KMS plugin,
+      and YubiKey PKCS#11 runtime, then run:
+
+        sudo install-homepki
+      EOF

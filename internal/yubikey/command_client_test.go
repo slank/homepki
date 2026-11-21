@@ -7,6 +7,35 @@ import (
 	"testing"
 )
 
+func writeExecutable(t *testing.T, path, content string) {
+	t.Helper()
+
+	file, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
+	if err != nil {
+		t.Fatalf("create temporary executable: %v", err)
+	}
+	tempPath := file.Name()
+	defer os.Remove(tempPath)
+
+	if _, err := file.WriteString(content); err != nil {
+		file.Close()
+		t.Fatalf("write temporary executable: %v", err)
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		t.Fatalf("sync temporary executable: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close temporary executable: %v", err)
+	}
+	if err := os.Chmod(tempPath, 0o700); err != nil {
+		t.Fatalf("chmod temporary executable: %v", err)
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		t.Fatalf("install fake executable: %v", err)
+	}
+}
+
 func TestCommandClientDiscover(t *testing.T) {
 	t.Parallel()
 
@@ -19,9 +48,7 @@ if [ "$1" = "list" ]; then
 fi
 printf 'Device type: YubiKey 5\nFirmware version: 5.7.1\nApplications\nPIV          Enabled\n'
 `
-	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
-		t.Fatalf("write fake ykman: %v", err)
-	}
+	writeExecutable(t, binary, script)
 
 	client := CommandClient{Config: CommandClientConfig{
 		YKManBinary: binary,
@@ -51,9 +78,7 @@ if [ "$1" = "list" ]; then
 fi
 printf 'Device type: YubiKey Edge\nFirmware version: 4.3.7\nApplications\nPIV          Not available\n'
 `
-	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
-		t.Fatalf("write fake ykman: %v", err)
-	}
+	writeExecutable(t, binary, script)
 
 	client := CommandClient{Config: CommandClientConfig{YKManBinary: binary}}
 	devices, err := client.Discover(context.Background())
@@ -72,9 +97,7 @@ func TestCommandClientDetectPKCS11(t *testing.T) {
 	binary := filepath.Join(tempDir, "pkcs11-tool")
 	library := filepath.Join(tempDir, "libykcs11.so")
 
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf 'RSA EC ECDSA mechanisms available\\n'\n"), 0o700); err != nil {
-		t.Fatalf("write fake pkcs11 tool: %v", err)
-	}
+	writeExecutable(t, binary, "#!/bin/sh\nprintf 'RSA EC ECDSA mechanisms available\\n'\n")
 	if err := os.WriteFile(library, []byte("fixture"), 0o600); err != nil {
 		t.Fatalf("write fake pkcs11 library: %v", err)
 	}
@@ -110,9 +133,7 @@ while [ "$#" -gt 0 ]; do
 done
 exit 2
 `
-	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
-		t.Fatalf("write fake pkcs11 tool: %v", err)
-	}
+	writeExecutable(t, binary, script)
 
 	if err := os.WriteFile(library, []byte("fixture"), 0o600); err != nil {
 		t.Fatalf("write fake pkcs11 library: %v", err)
@@ -144,9 +165,7 @@ func TestCommandClientSignWithStepKMS(t *testing.T) {
 	script := `#!/bin/sh
 printf signature
 `
-	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
-		t.Fatalf("write fake step: %v", err)
-	}
+	writeExecutable(t, binary, script)
 
 	client := CommandClient{Config: CommandClientConfig{
 		StepBinary:  binary,
@@ -170,9 +189,7 @@ func TestCommandClientDetectPKCS11WithStepKMS(t *testing.T) {
 
 	tempDir := t.TempDir()
 	binary := filepath.Join(tempDir, "step")
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
-		t.Fatalf("write fake step: %v", err)
-	}
+	writeExecutable(t, binary, "#!/bin/sh\nexit 0\n")
 
 	client := CommandClient{Config: CommandClientConfig{StepBinary: binary}}
 	capabilities, err := client.DetectPKCS11(context.Background())

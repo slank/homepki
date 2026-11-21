@@ -1,0 +1,13 @@
+device:
+  layer: rpizero2w
+  hostname: homepki
+
+image:
+  layer: image-rpios
+  boot_part_size: 256M
+  root_part_size: 3072M
+  name: homepki-raspberry-pi
+
+layer:
+  base: bookworm-minbase
+  custom: homepki-appliance
