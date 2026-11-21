@@ -20,6 +20,18 @@ Do not expose the service directly to the internet.
 
 Keep the HomePKI device on a trusted LAN. A private certificate service should not be reachable from the public internet.
 
+## Raspberry Pi image
+
+The release contains `homepki-VERSION-raspberry-pi-zero2w-arm64.img.xz` for Raspberry Pi Zero 2 W. Flash it with Raspberry Pi Imager and select the OS customization options to create an administrator account, configure SSH, set Wi-Fi, and choose the locale before first boot.
+
+The image includes a matching ARM64 installer bundle in `/opt/homepki/release`, Avahi, OpenSC/PCSC, and YubiKey Manager. It intentionally contains no administrator password, CA material, YubiKey PIN, or provisioner password.
+
+After booting, install the Step CLI, Step CA KMS-capable build, and Step KMS plugin as described below, then run:
+
+```sh
+sudo install-homepki
+```
+
 ## 1. Prepare the Linux host
 
 1. Install a 64-bit Debian-based distribution. Raspberry Pi users can install Raspberry Pi OS Lite 64-bit.

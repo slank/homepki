@@ -6,13 +6,14 @@ TARGET_OS ?= linux
 TARGET_ARCH ?= arm64
 RELEASE_BINARY = $(APP_NAME)-$(TARGET_OS)-$(TARGET_ARCH)
 INSTALLER_DIR = $(DIST_DIR)/installer-$(TARGET_OS)-$(TARGET_ARCH)
+SOURCE_ARCHIVE = $(DIST_DIR)/$(APP_NAME)-$(VERSION)-source.tar.gz
 
 VERSION ?= dev
 COMMIT ?= $(shell git --no-pager rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT)' -X 'main.buildDate=$(BUILD_DATE)'
 
-.PHONY: generate test lint build cross-build cross-build-amd64 cross-build-platform \
+.PHONY: generate test lint build source-package raspberry-pi-image cross-build cross-build-amd64 cross-build-platform \
 	appliance-package appliance-package-amd64 appliance-package-platform \
 	appliance-installer-package appliance-installer-package-amd64 appliance-installer-package-platform
 
@@ -28,6 +29,13 @@ lint:
 build:
 	mkdir -p $(DIST_DIR)
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(APP_NAME) $(APP_CMD)
+
+source-package:
+	mkdir -p $(DIST_DIR)
+	git archive --format=tar.gz --prefix=$(APP_NAME)-$(VERSION)/ -o $(SOURCE_ARCHIVE) HEAD
+
+raspberry-pi-image: appliance-installer-package
+	./scripts/build-raspberry-pi-image.sh
 
 cross-build:
 	$(MAKE) cross-build-platform TARGET_OS=linux TARGET_ARCH=arm64

@@ -26,12 +26,35 @@ HomePKI is an application build on Step CA and Linux. Some goals of HomePKI are:
 - `make build` builds a local binary in `dist/`.
 - `make cross-build` builds the `linux/arm64` release binary in `dist/`.
 - `make cross-build-amd64` builds the `linux/amd64` release binary in `dist/`.
-- `make appliance-package` creates a release tarball in `dist/`.
+- `make source-package` creates a versioned source archive in `dist/`.
+- `make appliance-package` creates an ARM64 release tarball in `dist/`.
+- `make appliance-package-amd64` creates an AMD64 release tarball in `dist/`.
 - `make appliance-installer-package` creates an installer tarball in `dist/`.
 - `make appliance-installer-package-amd64` creates an amd64 installer tarball in `dist/`.
+- `RPI_IMAGE_GEN_DIR=/path/to/rpi-image-gen make raspberry-pi-image` creates a compressed Raspberry Pi Zero 2 W image in `dist/`.
 - `./dist/homepki -check-yubikey` checks connected-key PIV/CCID readiness without changing the device.
 
 Set `TARGET_OS` and `TARGET_ARCH` with the `*-platform` targets for another supported Linux architecture.
+
+## Releases
+
+Releases are published from semantic version tags in the form `vMAJOR.MINOR.PATCH`. A tag triggers the release workflow, which runs validation and publishes:
+
+- a versioned source archive
+- Linux `arm64` and `amd64` binaries and installer archives
+- a Raspberry Pi Zero 2 W 64-bit disk image
+- SHA-256 checksums and an SBOM
+
+The Raspberry Pi image bundles the matching installer but does not contain administrator credentials, CA keys, YubiKey PINs, or network secrets. Use Raspberry Pi Imager's customization options for SSH and network setup before first boot.
+
+The first release is `v0.0.1`. To publish a release after its changes are merged and CI is green:
+
+```sh
+git tag v0.0.1
+git push origin v0.0.1
+```
+
+Annotated or signed tags can carry a release message and signature. The version embedded in release binaries comes from the tag that triggered the workflow.
 
 ## Database Migrations
 
